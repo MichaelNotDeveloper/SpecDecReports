@@ -36,9 +36,7 @@ Probe is based on hidden data from drafter and logits A[x_k] from markov-chain (
 ## Semi-autoregressive generation
 
 We wanna sample 
-$$
-p(x_k | y_{<k}) = \frac 1 Z p(y_{<k} | x_k) p(x_k)
-$$
+$p(x_k | y_{<k}) = \frac{1}{Z} p(y_{<k} | x_k) p(x_k)$
 We can approximate $p(y_{<k} | x_k)$ as a function of $x_k$ using RNN or Markov head, and logits from diffusion drafter.
 
 Here is markov head example, since it works better :

@@ -20,7 +20,7 @@ The architecture follows two principles:
 
 1. Choose a set of transformer layers $[l_1, \ldots, l_n]$ from the teacher model.
 2. Extract the hidden-state history (residual streams) from the selected teacher layers.
-3. Introduce one learned projection matrix $W_c$ with shape $(\text{hidden\_size},\ n \times \text{hidden\_size})$.
+3. Introduce one learned projection matrix $W_c$ with shape $(\text{hiddensize},\ n \times \text{hiddensize})$.
 4. For each token position, concatenate the hidden states from the selected layers and project them back to the original hidden size using $W_c$.
 5. Apply RMSNorm to the projected states.
 6. Run the drafter's transformer layers: use drafter hidden states $h_d$ as queries (Q), and the concatenation of projected teacher states $h_t$ and drafter states $h_d$ as keys and values (K/V). Masked draft tokens use full attention within their block (see the diagram below).

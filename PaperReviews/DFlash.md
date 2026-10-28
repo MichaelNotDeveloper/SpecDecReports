@@ -177,6 +177,6 @@ $$
 The acceptance probability can be expressed using total variation distance:
 
 $$
-\alpha = \mathbb{E}\left[1-\operatorname{TV}(p,q)\right]
+\alpha = \mathbb{E}\left[1-\text{TV}(p,q)\right]
 = \mathbb{E}\left[\sum_x\min\bigl(p(x),q(x)\bigr)\right].
 $$

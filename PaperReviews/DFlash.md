@@ -1,68 +1,74 @@
 # DFlash: Block Diffusion for Flash Speculative Decoding
-[DFlash](https://arxiv.org/abs/2602.06036) | 
-[DFlash1-2 github](https://github.com/z-lab/dflash) |
-[DFlare](https://arxiv.org/abs/2606.02091) |
-[DSpark](https://arxiv.org/abs/2607.05147) |
-[D-PACE](https://arxiv.org/abs/2605.18810)
 
+[DFlash](https://arxiv.org/abs/2602.06036) | [DFlash 1–2 GitHub](https://github.com/z-lab/dflash) | [DFlare](https://arxiv.org/abs/2606.02091) | [DSpark](https://arxiv.org/abs/2607.05147) | [D-PACE](https://arxiv.org/abs/2605.18810)
 
-# Introduction
-Main improvements come from two primitives :
-1. Generate drafter's tokens in one run
-2. Use Information from teacher model to generate future tokens.
+## Introduction
 
-# Architecture
-1. We use information from target model.
-2. Try to condition drafter on target model as strong as possible.
+The main improvements come from two ideas:
 
-### How to use teacher's KV-cache
-```
-1. Choose set of trasformer layers [l1, ..., ln] of teacher model
-2. Take all history of hidden states of desired layers (residual stream of theacher model): ht
-3. Create One Learned matrix Wc (hidden_size x (hidden_size * n))
-4. Project hiddens via Wc (concatenate hiddens from all layers, and project each hidden to normal size using Wc): ht
-5. Apply RMSNorm.
-6. Now compute Transfomer layers of drafter, passing hd to Q and concat[ht, hd] to KV, where hd are new masked tokens, for hd tokens use full mask (block alike, search for image lower)
-```
+1. Generate the drafter's tokens in a single forward pass.
+2. Use information from the target (teacher) model to predict future tokens.
+
+## Architecture
+
+The architecture follows two principles:
+
+1. Reuse information from the target model.
+2. Condition the drafter on the target model as strongly as possible.
+
+### How to use the teacher's KV-cache
+
+1. Choose a set of transformer layers $[l_1, \ldots, l_n]$ from the teacher model.
+2. Extract the hidden-state history (residual streams) from the selected teacher layers.
+3. Introduce one learned projection matrix $W_c$ with shape $(\text{hidden\_size},\ n \times \text{hidden\_size})$.
+4. For each token position, concatenate the hidden states from the selected layers and project them back to the original hidden size using $W_c$.
+5. Apply RMSNorm to the projected states.
+6. Run the drafter's transformer layers: use drafter hidden states $h_d$ as queries (Q), and the concatenation of projected teacher states $h_t$ and drafter states $h_d$ as keys and values (K/V). Masked draft tokens use full attention within their block (see the diagram below).
+
 ![](https://i.ibb.co/Pz5NLssC/image.png)
 
-### How to Train : loss & more
-We are training diffusion drafter to *imitate* teacher. So we sample [question -> answer] trajectories, sample random anchor-indexes (wih teacher KV-cache), and force drafter to generate masked tokens, using anchor tokens as start. 
+### Training: loss and other details
 
-Since we condition to imitate teacher model, we use cross entropy, and reweigt it, by how close token is to its anchor (so earlier tokens would generate more correctly)
+The diffusion drafter is trained to *imitate* the teacher. We sample question–answer trajectories, choose random anchor positions (with the corresponding teacher KV-cache), and train the drafter to predict masked tokens starting from those anchors.
+
+Since the goal is to imitate the teacher, we use cross-entropy loss. We reweight it according to the token's distance from its anchor, giving greater weight to earlier tokens:
 
 $$
-\mathcal{L}(\theta)=
--\sum_b\sum_{k\in\mathcal{M}_b}
-\exp \left(-\frac{k-1}{\gamma}\right)
-\log p_\theta(y_{b,k}\mid\cdot)
+\mathcal{L}(\theta)
+=-\sum_b\sum_{k\in\mathcal{M}_b}
+\exp\left(-\frac{k-1}{\gamma}\right)
+\log p_\theta(y_{b,k}\mid\cdot).
 $$
 
 > [!NOTE]
-> We mask everything except first anchor token.
+> All tokens in the draft block are masked except for the first anchor token.
 
 > [!NOTE]
-> We choos layers to sample from 
+> The teacher layers whose hidden states are used must be selected.
 
 > [!NOTE]
-> Random sampling of anchors improves convergence.
+> Randomly sampling anchor positions improves convergence.
 
 > [!NOTE]
-> Loss reweight (loss decay) is empirical, but slightly helps.
+> Loss reweighting (loss decay) is empirical, but provides a small improvement.
 
 > [!TIP]
-> Use continiuos block of anchors while traning, so you can batch training for  KV cache prefix.
+> Use a contiguous block of anchor positions during training. This allows training examples to share a teacher KV-cache prefix and makes batching more efficient.
+>
 > ![](https://i.ibb.co/YBT3qF4P/image.png)
 
-# Datasets & Bencmarks
+## Datasets & Benchmarks
+
 ### Training
-They  _probably_ did 9 epochs for training\
-Training was built on *answers* of trainer, not the answers of datasets.\
-Datasets:
+
+- The model was *possibly* trained for 9 epochs (needs verification).
+- Training uses *teacher-generated answers*, rather than the reference answers provided by the datasets.
+- The training data is the same as in EAGLE-3.
+
+Training datasets:
+
 1. [UltraChat](https://huggingface.co/datasets/openbmb/UltraChat)
 2. [ShareGPT](https://huggingface.co/collections/bunnycore/sharegpt-datasets)
-
-Same training data as EAGLE-3
 
 ### Benchmarking
 
@@ -83,16 +89,15 @@ Same training data as EAGLE-3
 | [Qasper](https://huggingface.co/datasets/allenai/qasper) | Long Context / Question Answering |
 | [GovReport](https://huggingface.co/datasets/launch/gov_report) | Long Context / Summarization |
 
+### Long-Context Ablation
 
-## Long Context Ablation
-
-Drafter average acceptance rate
-
-> [!NOTE]
-> Acceptance rate strongly depends on tasks.
+Average number of accepted draft tokens per step (acceptance length, $\tau$).
 
 > [!NOTE]
-> Long drafter is drafter fine-tuned on long context.
+> Acceptance depends strongly on the task.
+
+> [!NOTE]
+> **Long** refers to a drafter fine-tuned on long-context data; **Base** is the original drafter.
 
 | Context | HotpotQA (Base) | HotpotQA (Long) | Qasper (Base) | Qasper (Long) | GovReport (Base) | GovReport (Long) |
 |---|---:|---:|---:|---:|---:|---:|
@@ -105,7 +110,9 @@ Drafter average acceptance rate
 
 ![](https://i.ibb.co/fGk4tm8t/image.png)
 
-## Concurrency Ablations
+### Concurrency Ablations
+
+The columns 1–32 indicate concurrency levels. The baseline is measured in tokens per second (TPS); other rows report speedup relative to the baseline. $\tau$ is the average acceptance length.
 
 | Dataset | Method | 1 | 4 | 8 | 16 | 32 | Avg. τ |
 |---|---|---:|---:|---:|---:|---:|---:|
@@ -122,42 +129,54 @@ Drafter average acceptance rate
 | | EAGLE-3 (60) | 1.8× | 1.5× | 1.2× | 0.8× | 0.5× | 4.07 |
 | | **DFlash (10)** | **2.2×** | **2.0×** | **1.8×** | **1.5×** | **1.4×** | **3.73** |
 
-# Questions
-- Why does drafter use unified matrix Wc?
-- Why do we use RMS norm after Wc?
-- Why do we reweight loss in this specific style?
+## Questions
 
-# Thoughts
-- Specdec might easily generate low-entropy tokens.
-- new math for diffusion samplers
-- Get rid of long-context degradation
-- Can we finetune the teacher to adjust from drafter?
-- Find ways to predict $M_p$ with $M_q$ better. (not new context better) (Somehow understand easy-to generated tokens and sample them.) - We have to teach a model to predict entropy to entropy token batches.
-- If model generates high-entropy tokens correctly then the porblem might be more complex
+- Why does the drafter use a single shared projection matrix $W_c$?
+- Why is RMSNorm applied after $W_c$?
+- Why is the loss reweighted using this particular exponential decay?
 
+## Thoughts
 
-# Appendix
+- Speculative decoding may be particularly effective at generating low-entropy tokens.
+- Develop a new mathematical treatment of diffusion samplers.
+- Find a way to eliminate long-context degradation.
+- Can we fine-tune the teacher to better align it with the drafter?
+- Can we predict $M_p$ from $M_q$ more accurately, without providing additional context? Perhaps identify tokens that are easy to generate and sample them preferentially. This may require training a model to estimate token entropy and form token batches based on that entropy.
+- If high-entropy tokens can also be predicted correctly, the problem may be more complex than simply distinguishing low-entropy and high-entropy tokens.
 
-## 1. Mathematics
-Some basic propositions from original [SpecDec](https://arxiv.org/abs/2211.17192) paper:
+## Appendix
 
-Sampling algo :
+### 1. Mathematics
+
+Some basic results from the original [Speculative Decoding](https://arxiv.org/abs/2211.17192) paper.
+
+**Sampling algorithm**
+
+```text
+Sample a candidate token x from q(x).
+1. If q(x) <= p(x), accept x.
+2. Otherwise, accept x with probability p(x) / q(x).
+3. If x is rejected, sample a replacement from the normalized
+   residual distribution proportional to max(0, p(x) - q(x)).
 ```
-Generate tokens from q(x).
-1. Keep tokens if q(x) < p(x)
-2. Keep tokens with prob. p(x)/q(x)
-3. Generate new, from max(0, p(x) - q(x))
-```
 
-Set $\alpha = \mathbb E_\text{sampled text} [I ( \text{token kept} )]$
-
-If we make an assumtion, that new token is kept can be simulated as unfair coin-flips $\gamma$ (max-amount if generated tokens is $\gamma + 1$) times, with success rate of $1 - \alpha$. We get desired speed-up rate.
-
-Expected amount of tokens : $\frac{1 - \alpha^{\gamma+1}}{1 - \alpha}$
-
-Alpha can be calculated, as
+Define the average acceptance probability as
 
 $$
-\alpha=\mathbb E\left[1 - TV(q(x) - p(x))\right] = \mathbb E \left[\max (q(x), p(x))\right]
+\alpha = \mathbb{E}_{\text{sampled text}}\left[\mathbf{1}\{\text{token accepted}\}\right].
 $$
 
+Assume that acceptance decisions can be modeled as independent, identically distributed Bernoulli trials, with acceptance probability $\alpha$ and rejection probability $1-\alpha$. If the drafter proposes $\gamma$ tokens, at most $\gamma+1$ tokens are produced in one speculative decoding step.
+
+The expected number of output tokens per step is
+
+$$
+\mathbb{E}[N] = \frac{1-\alpha^{\gamma+1}}{1-\alpha}.
+$$
+
+The acceptance probability can be expressed using total variation distance:
+
+$$
+\alpha = \mathbb{E}\left[1-\operatorname{TV}(p,q)\right]
+= \mathbb{E}\left[\sum_x\min\bigl(p(x),q(x)\bigr)\right].
+$$
